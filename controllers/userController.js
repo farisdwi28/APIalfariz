@@ -46,11 +46,19 @@ exports.getUserById = async (req, res) => {
 };
 
 exports.Register = async (req, res) => {
-    const { first_name, last_name, email, phone, password } = req.body;
+    const { first_name, last_name, email, phone, password, action } = req.body;
 
     try {
         const existingUserQuery = `SELECT * FROM user WHERE email = ?`;
         const rows = await queryPromise(existingUserQuery, [email]);
+
+        if (action === 'check') {
+            if (rows.length > 0) {
+                return res.status(400).send({ error: "Email is already in use" });
+            } else {
+                return res.status(200).send({ message: "Email is available" });
+            }
+        }
 
         if (rows.length > 0) {
             return res.status(400).send({ error: "Email is already in use" });
@@ -65,6 +73,7 @@ exports.Register = async (req, res) => {
         res.status(500).send({ error: "Database query failed" });
     }
 };
+
 
 exports.Login = async (req, res) => {
     const { email, password } = req.body;
@@ -82,12 +91,13 @@ exports.Login = async (req, res) => {
         }
 
         const token = generateToken(user.id);
-        res.status(200).send({ token });
+        res.status(200).send({ token, first_name: user.first_name, last_name: user.last_name, email: user.email });
     } catch (err) {
         console.error("Database query failed: ", err);
         res.status(500).send({ error: "Database query failed" });
     }
 };
+
 
 exports.editProfile = async (req, res) => {
     let { first_name, last_name, phone, password } = req.body;
