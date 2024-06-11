@@ -52,7 +52,7 @@ exports.Register = async (req, res) => {
         const existingUserQuery = `SELECT * FROM user WHERE email = ?`;
         const rows = await queryPromise(existingUserQuery, [email]);
 
-        if (action === 'check') {
+        if (action === "check") {
             if (rows.length > 0) {
                 return res.status(400).send({ error: "Email is already in use" });
             } else {
@@ -65,15 +65,21 @@ exports.Register = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const query = "INSERT INTO user (first_name, last_name, email, phone, password, role) VALUES (?, ?, ?, ?, ?, 'user')";
-        await queryPromise(query, [first_name, last_name, email, phone, hashedPassword]);
+        const query =
+            "INSERT INTO user (first_name, last_name, email, phone, password, role) VALUES (?, ?, ?, ?, ?, 'user')";
+        await queryPromise(query, [
+            first_name,
+            last_name,
+            email,
+            phone,
+            hashedPassword,
+        ]);
         res.status(201).send({ message: "Registered successfully" });
     } catch (err) {
         console.error("Database query failed: ", err);
         res.status(500).send({ error: "Database query failed" });
     }
 };
-
 
 exports.Login = async (req, res) => {
     const { email, password } = req.body;
@@ -91,10 +97,38 @@ exports.Login = async (req, res) => {
         }
 
         const token = generateToken(user.id);
-        res.status(200).send({ token, first_name: user.first_name, last_name: user.last_name, email: user.email });
+        res.status(200).send({ token });
     } catch (err) {
         console.error("Database query failed: ", err);
         res.status(500).send({ error: "Database query failed" });
+    }
+};
+
+exports.getUserData = async (req, res) => {
+    if (!validateAuthorization(req.headers.authorization)) {
+        return res.status(401).send({ error: "Authorization header is missing or invalid" });
+    }
+
+    const token = req.headers.authorization.split(' ')[1];
+    const user = validateUser(token);
+    if (!user) {
+        return res.status(401).send({ error: "Invalid token" });
+    }
+
+    try {
+        const query = `SELECT first_name, last_name, phone, email, avatar FROM user WHERE id = ?`;
+        const rows = await queryPromise(query, [user.id]);
+        if (rows.length === 0) {
+            return res.status(404).send({ error: "User not found" });
+        }
+
+        const userData = rows[0];
+        userData.avatar = userData.avatar.toString('base64');
+
+        res.status(200).send(userData);
+    } catch (err) {
+        console.error("Failed to get user data: ", err);
+        res.status(500).send({ error: "Failed to get user data" });
     }
 };
 
@@ -116,13 +150,22 @@ exports.editProfile = async (req, res) => {
         const rows = await queryPromise(userQuery, [user.id]);
         const data = rows[0];
 
-        const hashedPassword = password ? await bcrypt.hash(password, 10) : data.password;
+        const hashedPassword = password
+            ? await bcrypt.hash(password, 10)
+            : data.password;
         first_name = first_name || data.first_name;
         last_name = last_name || data.last_name;
         phone = phone || data.phone;
 
-        const updateQuery = "UPDATE user SET first_name = ?, last_name = ?, phone = ?, password = ? WHERE id = ?";
-        await queryPromise(updateQuery, [first_name, last_name, phone, hashedPassword, user.id]);
+        const updateQuery =
+            "UPDATE user SET first_name = ?, last_name = ?, phone = ?, password = ? WHERE id = ?";
+        await queryPromise(updateQuery, [
+            first_name,
+            last_name,
+            phone,
+            hashedPassword,
+            user.id,
+        ]);
         res.status(200).send({ message: "Profile updated successfully" });
     } catch (err) {
         console.error("Database query failed: ", err);
@@ -156,7 +199,9 @@ exports.deleteUserById = async (req, res) => {
         if (result.affectedRows === 0) {
             return res.status(404).send({ message: "User not found" });
         }
-        res.status(200).send({ message: `User with id: ${req.params.id} deleted successfully` });
+        res
+            .status(200)
+            .send({ message: `User with id: ${req.params.id} deleted successfully` });
     } catch (err) {
         console.error("Database query failed: ", err);
         res.status(500).send({ error: "Database query failed" });
