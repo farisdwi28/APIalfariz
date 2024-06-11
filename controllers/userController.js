@@ -132,7 +132,6 @@ exports.getUserData = async (req, res) => {
     }
 };
 
-
 exports.editProfile = async (req, res) => {
     let { first_name, last_name, phone, password } = req.body;
     const authorizedUser = validateAuthorization(req.headers.authorization);
@@ -207,3 +206,21 @@ exports.deleteUserById = async (req, res) => {
         res.status(500).send({ error: "Database query failed" });
     }
 };
+
+exports.resetPassword = async (req, res) => {
+    const { email, newPassword } = req.body;
+    try {
+        const userQuery = "SELECT * FROM user WHERE email = ?";
+        const rows = await queryPromise(userQuery, [email]);
+        if (!rows) {
+            return res.send("Email Not Found")
+        }
+        const hashedPassword = await bcrypt.hash(newPassword, 10)
+        const queryUpdate = `UPDATE user SET password = ? WHERE email = ?`
+        await queryPromise(queryUpdate, [hashedPassword, email])
+        res.status(200).send({ message: "Password updated successfully" });
+    } catch (err) {
+        console.error("Database query failed: ", err);
+        res.status(500).send({ error: "Database query failed" });
+    }
+}
