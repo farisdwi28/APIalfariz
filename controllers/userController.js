@@ -116,7 +116,7 @@ exports.getUserData = async (req, res) => {
     }
 
     try {
-        const query = `SELECT first_name, last_name, phone, email, avatar FROM user WHERE id = ?`;
+        const query = `SELECT id, first_name, last_name, phone, email, avatar FROM user WHERE id = ?`;
         const rows = await queryPromise(query, [user.id]);
         if (rows.length === 0) {
             return res.status(404).send({ error: "User not found" });
@@ -188,8 +188,8 @@ exports.deleteUserById = async (req, res) => {
         const rows = await queryPromise(userQuery, [user.id]);
         const data = rows[0];
 
-        if (data.role !== "admin") {
-            return res.status(401).send("Unauthorized: Only admins can delete users");
+        if (data.role === "admin") {
+            return res.status(401).send("Unauthorized: Admin accounts cannot be deleted");
         }
 
         const deleteQuery = "DELETE FROM user WHERE id = ?";
