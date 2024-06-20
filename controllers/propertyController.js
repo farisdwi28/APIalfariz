@@ -3,13 +3,16 @@ const { validateAuthorization } = require("../utils/Authorization");
 const { queryPromise } = require("../utils/promise");
 
 exports.getAllProperty = async (req, res) => {
-    const query = 'SELECT * FROM property';
+    const query = "SELECT * FROM property";
     try {
         const data = await queryPromise(query);
         for (let row of data) {
-            const mediaQuery = 'SELECT * FROM property_medias WHERE property_id = ?';
+            const mediaQuery = "SELECT * FROM property_medias WHERE property_id = ?";
             const propertymedia = await queryPromise(mediaQuery, row.id);
-            row.property_medias = propertymedia;
+            row.property_medias = propertymedia.map((media) => {
+                media.media = media.media.toString("base64");
+                return media;
+            });
         }
         console.log({ data });
         res.send(data);
@@ -22,12 +25,20 @@ exports.getAllProperty = async (req, res) => {
 exports.getPropertybyCategory = async (req, res) => {
     const query = `SELECT * FROM property WHERE category = ?`;
     try {
-        const rows = await queryPromise(query, [req.params.category]);
-        if (rows.length === 0) {
-            res.status(404).send({ error: "Property category not found" });
-        } else {
-            res.status(200).json(rows);
+        const data = await queryPromise(query, [req.params.category]);
+        if (data.length === 0) {
+            return res.status(404).send({ error: "Property category not found" });
         }
+        for (let row of data) {
+            const mediaQuery = "SELECT * FROM property_medias WHERE property_id = ?";
+            const propertymedia = await queryPromise(mediaQuery, row.id);
+            row.property_medias = propertymedia.map((media) => {
+                media.media = media.media.toString("base64");
+                return media;
+            });
+        }
+        console.log({ data });
+        res.status(200).json(data);
     } catch (err) {
         console.log(err);
         res.status(500).send({ error: "Database query failed" });
@@ -37,23 +48,96 @@ exports.getPropertybyCategory = async (req, res) => {
 exports.getPropertybyLocation = async (req, res) => {
     const query = `SELECT * FROM property WHERE location = ?`;
     try {
-        const rows = await queryPromise(query, [req.params.location]);
-        if (rows.length === 0) {
-            res.status(404).send({ error: "Property location not found" });
-        } else {
-            res.status(200).json(rows);
+        const data = await queryPromise(query, [req.params.location]);
+        if (data.length === 0) {
+            return res.status(404).send({ error: "Property location not found" });
         }
+        for (let row of data) {
+            const mediaQuery = "SELECT * FROM property_medias WHERE property_id = ?";
+            const propertymedia = await queryPromise(mediaQuery, row.id);
+            row.property_medias = propertymedia.map((media) => {
+                media.media = media.media.toString("base64");
+                return media;
+            });
+        }
+        console.log({ data });
+        res.status(200).json(data);
     } catch (err) {
         console.log(err);
         res.status(500).send({ error: "Database query failed" });
     }
 };
 
-exports.addProperty = async (req, res) => {
-    const { category, name_property, location, bed, bath, surface_area, description, contact, owner } = req.body;
-    const query = "INSERT INTO property (category, name_property, location, bed, bath, surface_area, description, contact, owner) VALUES (?,?,?,?,?,?,?,?,?)";
+exports.getPropertyById = async (req, res) => {
+    const { id } = req.params;
+
+    // Validasi input id
+    if (!id || isNaN(id)) {
+        return res.status(400).json({ error: "Invalid property ID" });
+    }
+
+    const propertyQuery = "SELECT * FROM property WHERE id = ?";
+    const mediaQuery = "SELECT * FROM property_medias WHERE property_id = ?";
+
     try {
-        await queryPromise(query, [category, name_property, location, bed, bath, surface_area, description, contact, owner]);
+        // Ambil data properti berdasarkan id
+        const propertyData = await queryPromise(propertyQuery, [id]);
+
+        // Pastikan properti ditemukan
+        if (propertyData.length === 0) {
+            return res.status(404).json({ error: "Property not found" });
+        }
+
+        // Ambil media terkait properti
+        const propertyId = propertyData[0].id;
+        const propertyMedia = await queryPromise(mediaQuery, [propertyId]);
+
+        // Encode media menjadi base64
+        const dataWithMedia = propertyData.map((property) => {
+            property.property_medias = propertyMedia
+                .filter((media) => media.property_id === property.id)
+                .map((media) => {
+                    media.media = Buffer.from(media.media).toString("base64");
+                    return media;
+                });
+            return property;
+        });
+
+        console.log('Data with media:', JSON.stringify(dataWithMedia, null, 2));
+        res.status(200).json(dataWithMedia);
+    } catch (err) {
+        console.error("Error fetching property by ID:", err);
+        res.status(500).json({ error: "Database query failed" });
+    }
+};
+
+
+exports.addProperty = async (req, res) => {
+    const {
+        category,
+        name_property,
+        location,
+        bed,
+        bath,
+        surface_area,
+        description,
+        contact,
+        owner,
+    } = req.body;
+    const query =
+        "INSERT INTO property (category, name_property, location, bed, bath, surface_area, description, contact, owner) VALUES (?,?,?,?,?,?,?,?,?)";
+    try {
+        await queryPromise(query, [
+            category,
+            name_property,
+            location,
+            bed,
+            bath,
+            surface_area,
+            description,
+            contact,
+            owner,
+        ]);
         res.status(201).send({ message: "Add property successfully" });
     } catch (err) {
         console.error("Database query failed: ", err);
@@ -62,7 +146,17 @@ exports.addProperty = async (req, res) => {
 };
 
 exports.editPropertyById = async (req, res) => {
-    let { category, name_property, location, bed, bath, surface_area, description, contact, owner } = req.body;
+    let {
+        category,
+        name_property,
+        location,
+        bed,
+        bath,
+        surface_area,
+        description,
+        contact,
+        owner,
+    } = req.body;
     const authorizedUser = validateAuthorization(req.headers.authorization);
     if (!authorizedUser) {
         return res.status(401).send("Unauthorized: Invalid or missing token");
@@ -79,10 +173,12 @@ exports.editPropertyById = async (req, res) => {
         const line = row[0];
 
         if (line.role !== "admin") {
-            return res.status(401).send("Unauthorized: Only admins can edit property");
+            return res
+                .status(401)
+                .send("Unauthorized: Only admins can edit property");
         }
 
-        const propertyQuery = `SELECT * FROM property`
+        const propertyQuery = `SELECT * FROM property`;
         const rows = await queryPromise(propertyQuery);
         const data = rows[0];
 
@@ -96,10 +192,21 @@ exports.editPropertyById = async (req, res) => {
         contact = contact || data.contact;
         owner = owner || data.owner;
 
-        const updateQuery = "UPDATE property SET category = ?, name_property = ?, location = ?, bed = ?, bath = ?, surface_area = ?, description = ?, contact = ?, owner = ? WHERE id = ?";
-        await queryPromise(updateQuery, [category, name_property, location, bed, bath, surface_area, description, contact, owner, req.params.id]);
+        const updateQuery =
+            "UPDATE property SET category = ?, name_property = ?, location = ?, bed = ?, bath = ?, surface_area = ?, description = ?, contact = ?, owner = ? WHERE id = ?";
+        await queryPromise(updateQuery, [
+            category,
+            name_property,
+            location,
+            bed,
+            bath,
+            surface_area,
+            description,
+            contact,
+            owner,
+            req.params.id,
+        ]);
         res.status(201).send({ message: "Property updated successfully" });
-
     } catch (err) {
         console.error("Database query failed: ", err);
         res.status(500).send({ error: "Database query failed" });
@@ -141,10 +248,11 @@ exports.deletePropertyById = async (req, res) => {
             return res.status(403).send("Forbidden: Only admins can delete property");
         }
 
-        const deleteMediaQuery = 'DELETE FROM property_medias WHERE property_id = ?';
+        const deleteMediaQuery =
+            "DELETE FROM property_medias WHERE property_id = ?";
         await queryPromise(deleteMediaQuery, [id]);
 
-        const deletePropertyQuery = 'DELETE FROM property WHERE id = ?';
+        const deletePropertyQuery = "DELETE FROM property WHERE id = ?";
         const result = await queryPromise(deletePropertyQuery, [id]);
 
         if (result.affectedRows === 0) {
@@ -157,5 +265,3 @@ exports.deletePropertyById = async (req, res) => {
         res.status(500).send({ error: "Database query failed" });
     }
 };
-
-
